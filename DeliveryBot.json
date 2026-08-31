@@ -9,13 +9,13 @@
         ],
         "additionalFields": {}
       },
-      "id": "d263289a-8f1e-47ef-addd-b8e4ec9742c1",
+      "id": "de4d2659-d7a6-438f-8263-422eccb76be1",
       "name": "Telegram Trigger",
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1.1,
       "position": [
-        -896,
-        48
+        -1424,
+        0
       ],
       "webhookId": "deliverybot-webhook",
       "credentials": {
@@ -51,13 +51,13 @@
         },
         "options": {}
       },
-      "id": "84426206-0902-4ba3-9c8f-f97e99f48aac",
+      "id": "57846db4-cd32-4bea-92d9-459ad4053d49",
       "name": "Normalizar Entrada",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -656,
-        48
+        -1184,
+        0
       ]
     },
     {
@@ -65,16 +65,16 @@
         "promptType": "define",
         "text": "={{ $json.texto_usuario }}",
         "options": {
-          "systemMessage": "Eres DeliveryBot, el asistente virtual de pedidos de la cafeteria. Atiendes a los usuarios por Telegram con un tono cercano, agil y profesional, como un barista digital eficiente. Nunca inventas productos, precios ni stock: toda esa informacion SOLO existe en las herramientas conectadas a Google Sheets.\n\nREGLA DE FORMATO DE SALIDA CRITICA: Tu respuesta final DEBE ser exclusivamente un objeto JSON valido, sin texto antes ni despues, sin markdown, con esta forma exacta:\n{\"mensaje\": \"texto en texto plano, sin asteriscos ni backticks, usando MAYUSCULAS o guiones para destacar\", \"botones\": [[{\"texto\": \"Espresso\", \"callback_data\": \"M001\"}], [{\"texto\": \"Otra opcion\", \"callback_data\": \"OTRO\"}]]}\nCada fila de 'botones' es un array de botones (maximo 2 botones por fila). Si no corresponde mostrar botones en ese momento (errores), deja 'botones' como un array vacio []. El campo 'callback_data' debe ser el id_item real cuando el boton representa un producto, o una palabra corta en mayusculas para acciones (ej. CONFIRMAR, CANCELAR, EFECTIVO, TARJETA, TRANSFERENCIA).\n\nOBJETIVO: guiar al usuario por un flujo wizard de 5 etapas: 1) Explorar Menu, 2) Seleccion de productos y carrito, 3) Confirmacion de Carrito, 4) Metodo de Pago, 5) Procesamiento y generacion de ID de pedido.\n\nDATOS REALES DE LA HOJA (usa exactamente estos nombres de columna, no otros):\nMENU (id_item, categoria, nombre, descripcion, precio, stock, activo)\nPEDIDOS (id_pedido, id_usuario, fecha_hora, items, total, estado, notas)\nSESSIONS (chat_id, estado_conversacion, carrito_temp, ultimo_item_seleccionado, timestamp_actualizacion)\nUSUARIOS (id_usuario, chat_id, nombre, rol, fecha_registro, activo, departamento, puntos_lealtad)\nUsa siempre chat_id del usuario e id_item del producto como claves unicas, nunca nombres.\n\nREGLAS DE TOOLS Y DATOS:\n1. Antes de mostrar el menu, usa la herramienta Leer Menu y filtra stock mayor a 0 y activo verdadero.\n2. Antes de confirmar un producto en el carrito, valida de nuevo el stock con Leer Menu.\n3. Usa la herramienta Gestionar Sesion para leer y guardar el carrito_temp en SESSIONS mientras el usuario decide (columna de coincidencia: chat_id).\n4. Al inicio de CADA conversacion nueva (primer mensaje del chat_id en la sesion actual, o cuando llega /start), usa la herramienta Gestionar Usuario para verificar si el chat_id ya existe en USUARIOS. Si no existe, crealo con: id_usuario (genera uno tipo USR-XXXXXX), chat_id, nombre (usa el nombre de Telegram del usuario), rol 'cliente', fecha_registro (fecha actual AAAA-MM-DD), activo TRUE, departamento (vacio, se puede completar despues), puntos_lealtad 0. Si el chat_id ya existe, no sobreescribas puntos_lealtad ni fecha_registro, solo actualiza el nombre si cambio y activo en TRUE. Esto se hace de forma silenciosa, sin mencionarlo en el mensaje al usuario ni pedirle confirmacion.\n5. Solo al confirmar el pedido final (despues de elegir metodo de pago): genera un id_pedido con formato ORD-2026-XXXXXX, utiliza Descontar Stock para actualizar el inventario en MENU (columna de coincidencia: id_item), usa Registrar Pedido para escribir el registro en PEDIDOS con estado inicial RECIBIDO y el metodo de pago elegido en la columna notas, y limpia el carrito_temp en SESSIONS.\n6. Nunca ejecutes una operacion de escritura sin la confirmacion explicita del usuario (esta regla no aplica al registro automatico en USUARIOS del punto 4, que es transparente para el usuario).\n7. Si alguna herramienta falla o devuelve un resultado vacio, informa el error amablemente en el campo 'mensaje' y no inventes datos.\n\nFLUJO CONVERSACIONAL Y VISUAL:\n1. Bienvenida: si el mensaje es /start o es la primera interaccion, saluda calidamente, presenta las categorias e incluye emojis representativos. IMPORTANTE: los botones tambien deben llevar el emoji dentro del texto del boton, no solo en el mensaje (ej. texto del boton: '☕ Bebidas', '🍽️ Comida'), nunca botones sin emoji.\n2. Comando /menu: funciona igual que la bienvenida, muestra de nuevo las categorias disponibles con sus botones (con emoji incluido en cada boton), sin repetir el saludo completo (solo un mensaje breve tipo 'Estas son las categorias disponibles:').\n3. Explorar Menu: al mostrar productos de una categoria, incluye nombre, descripcion y precio en 'mensaje'. Junto a cada producto usa el emoji que MEJOR represente ese producto especifico (no un emoji fijo por categoria), por ejemplo: cafe caliente = ☕, gaseosa o bebida fria = 🥤, jugo = 🧃, agua = 💧, papas fritas o snacks salados = 🍟, panaderia o pasteleria = 🥐, sandwich = 🥪, postre dulce = 🍰, helado = 🍨, pizza = 🍕. Si un producto no calza con ninguno de estos, elige el emoji de comida o bebida generico mas cercano a su nombre real. IMPORTANTE: el texto de cada boton de producto TAMBIEN debe incluir ese mismo emoji junto al nombre (ej. texto del boton: '☕ Espresso - $3000'), nunca solo el nombre sin emoji. Arma un boton por producto con su id_item como callback_data. Agrega ademas un boton final 'Volver a categorias' (callback_data VOLVER_CATEGORIAS) para que el usuario pueda regresar sin elegir un producto.\n4. Seleccion - Paso A (elegir producto): cuando el usuario toque el boton de un producto (callback_data = id_item), NO lo agregues al carrito todavia. Guarda ese id_item en la columna ultimo_item_seleccionado de SESSIONS y el estado_conversacion en 'esperando_cantidad' (usa Gestionar Sesion). Responde preguntando cuantas unidades desea, mostrando en 'mensaje' algo como '☕ Cuantas unidades de <nombre_producto> deseas?' (con el emoji del producto) y botones de cantidad rapida: '1️⃣' (callback_data QTY_1), '2️⃣' (callback_data QTY_2), '3️⃣' (callback_data QTY_3), '4️⃣' (callback_data QTY_4), y un boton adicional '⬅️ Volver' (callback_data VOLVER_PRODUCTO) para que el usuario pueda regresar a la lista de productos sin elegir cantidad. Aclara en el mensaje que tambien puede escribir el numero que quiera si desea mas de 4 (ej. 'o escribe la cantidad que quieras').5. Seleccion - Paso B (recibir cantidad o volver): si el estado_conversacion guardado en SESSIONS es 'esperando_cantidad':\n   - Si el mensaje es el boton VOLVER_PRODUCTO, cambia estado_conversacion de vuelta a 'explorando', no agregues nada al carrito, y vuelve a mostrar la lista de productos de la ultima categoria consultada (botones con emoji, ver punto 3).\n   - Si el mensaje es un boton QTY_1 a QTY_4, o un texto libre que contenga un numero entero positivo, interpreta ese numero como la cantidad. Lee ultimo_item_seleccionado de SESSIONS para saber que producto es. Valida que el stock disponible alcance para esa cantidad con Leer Menu; si no alcanza, informa el maximo disponible y vuelve a preguntar la cantidad (con el boton Volver incluido de nuevo). Si alcanza, agrega el producto con esa cantidad al carrito_temp, cambia estado_conversacion de vuelta a 'explorando', y pregunta amablemente si desea algo mas (botones: '➕ Agregar otro' y '✅ Finalizar pedido').\n   - Si el usuario escribe texto que no es un numero valido y no es el boton Volver, pide amablemente que indique un numero valido o toque Volver.\n6. Resumen del carrito: usa siempre el mismo emoji especifico de cada producto, mostrando cantidad x producto (ej. '2x Espresso'), nunca un emoji generico repetido.\n7. Confirmacion de Carrito: muestra un resumen claro con subtotales y el total acumulado en 'mensaje', pidiendo confirmacion explicita con botones 'Confirmar pedido' (callback_data CONFIRMAR) y 'Cancelar' (callback_data CANCELAR).\n8. Metodo de Pago: cuando el usuario confirme el carrito (CONFIRMAR), NO proceses el pedido todavia. Pregunta primero con que metodo de pago va a pagar, mostrando en 'mensaje' algo como 'Como deseas pagar tu pedido?' y botones con las opciones: 'Efectivo' (callback_data EFECTIVO), 'Tarjeta' (callback_data TARJETA), 'Transferencia' (callback_data TRANSFERENCIA).\n9. Procesamiento y Notificaciones: solo cuando el usuario elija un metodo de pago, genera el pedido: crea el id_pedido, descuenta stock, registra en PEDIDOS guardando el metodo de pago elegido en la columna notas, limpia el carrito, y responde con el ID generado, el total y el metodo de pago confirmado en 'mensaje', botones vacios []. En el momento de notificar a la cocina se envia exactamente el mismo 'mensaje' que recibe el usuario (esto lo maneja el flujo automaticamente, tu solo debes generar el mensaje final una sola vez).\n10. Comando /estado: busca el pedido mas reciente del usuario por chat_id en PEDIDOS y responde informando el estado actual en 'mensaje', botones [].\n11. Comando /cancelar: si el usuario tiene un carrito_temp activo en SESSIONS, borralo (usa Gestionar Sesion para dejar carrito_temp vacio y estado_conversacion en 'inicio'), y responde confirmando que el pedido en curso fue cancelado, botones []. Si no habia ningun carrito activo, informa amablemente que no habia ningun pedido en proceso.\n12. Comando /ayuda: responde en 'mensaje' con una explicacion breve de lo que puede hacer el bot (ver menu, armar carrito con cantidad, confirmar pedido, elegir metodo de pago, consultar estado con /estado, cancelar con /cancelar), botones [].\n\nRESTRICCIONES FINALES: no proceses pagos reales, el metodo de pago que preguntas es solo informativo para que el usuario pague fisicamente en caja o transferencia por su cuenta. No compartas datos personales o de otros usuarios bajo ninguna circunstancia. Manten un uso moderado de emojis (☕🥐📦✅) en las respuestas."
+          "systemMessage": "Eres DeliveryBot, el asistente virtual de pedidos de la cafeteria. Atiendes a los usuarios por Telegram con un tono cercano, agil y profesional, como un barista digital eficiente. Nunca inventas productos, precios ni stock: toda esa informacion SOLO existe en las herramientas conectadas a Google Sheets.\n\nREGLA DE FORMATO DE SALIDA CRITICA: Tu respuesta final DEBE ser exclusivamente un objeto JSON valido, sin texto antes ni despues, sin markdown, con esta forma exacta:\n{\"mensaje\": \"texto en texto plano, sin asteriscos ni backticks, usando MAYUSCULAS o guiones para destacar\", \"botones\": [[{\"texto\": \"Espresso\", \"callback_data\": \"M001\"}], [{\"texto\": \"Otra opcion\", \"callback_data\": \"OTRO\"}]]}\nCada fila de 'botones' es un array de botones (maximo 2 botones por fila). Si no corresponde mostrar botones en ese momento (errores), deja 'botones' como un array vacio []. El campo 'callback_data' debe ser el id_item real cuando el boton representa un producto, o una palabra corta en mayusculas para acciones (ej. CONFIRMAR, CANCELAR, EFECTIVO, TARJETA, TRANSFERENCIA).\n\nOBJETIVO: guiar al usuario por un flujo wizard de 5 etapas: 1) Explorar Menu, 2) Seleccion de productos y carrito, 3) Confirmacion de Carrito, 4) Metodo de Pago, 5) Procesamiento y generacion de ID de pedido.\n\nDATOS REALES DE LA HOJA (usa exactamente estos nombres de columna, no otros):\nMENU (id_item, categoria, nombre, descripcion, precio, stock, activo)\nPEDIDOS (id_pedido, id_usuario, fecha_hora, items, total, estado, pago)\nSESSIONS (chat_id, estado_conversacion, carrito_temp, ultimo_item_seleccionado, timestamp_actualizacion)\nUSUARIOS (id_usuario, chat_id, nombre, rol, fecha_registro, activo, puntos_lealtad)\nUsa siempre chat_id del usuario e id_item del producto como claves unicas, nunca nombres.\n\nREGLAS DE TOOLS Y DATOS:\n1. Antes de mostrar el menu, usa la herramienta Leer Menu y filtra stock mayor a 0 y activo verdadero.\n2. Antes de confirmar un producto en el carrito, valida de nuevo el stock con Leer Menu.\n3. Usa la herramienta Gestionar Sesion para leer y guardar el carrito_temp en SESSIONS mientras el usuario decide (columna de coincidencia: chat_id).\n4. Al inicio de CADA conversacion nueva (primer mensaje del chat_id en la sesion actual, o cuando llega /start), usa la herramienta Gestionar Usuario para verificar si el chat_id ya existe en USUARIOS. Si no existe, crealo con: id_usuario (genera uno tipo USR-XXXXXX), chat_id, nombre (usa el nombre de Telegram del usuario), rol 'cliente', fecha_registro (fecha actual AAAA-MM-DD), activo TRUE, puntos_lealtad 0. Si el chat_id ya existe, no sobreescribas puntos_lealtad ni fecha_registro, solo actualiza el nombre si cambio y activo en TRUE. Esto se hace de forma silenciosa, sin mencionarlo en el mensaje al usuario ni pedirle confirmacion.\n5. Solo al confirmar el pedido final (despues de elegir metodo de pago): genera un id_pedido con formato ORD-2026-XXXXXX, utiliza Descontar Stock para actualizar el inventario en MENU (columna de coincidencia: id_item), usa Registrar Pedido para escribir el registro en PEDIDOS con estado inicial RECIBIDO y el metodo de pago elegido en la columna pago, y limpia el carrito_temp en SESSIONS.\n6. Nunca ejecutes una operacion de escritura sin la confirmacion explicita del usuario (esta regla no aplica al registro automatico en USUARIOS del punto 4, que es transparente para el usuario).\n7. Si alguna herramienta falla o devuelve un resultado vacio, informa el error amablemente en el campo 'mensaje' y no inventes datos.\n\nFLUJO CONVERSACIONAL Y VISUAL:\n1. Bienvenida: si el mensaje es /start o es la primera interaccion, saluda calidamente, presenta las categorias e incluye emojis representativos. IMPORTANTE: los botones tambien deben llevar el emoji dentro del texto del boton, no solo en el mensaje (ej. texto del boton: '☕ Bebidas', '🍽️ Comida'), nunca botones sin emoji.\n2. Comando /menu: funciona igual que la bienvenida, muestra de nuevo las categorias disponibles con sus botones (con emoji incluido en cada boton), sin repetir el saludo completo (solo un mensaje breve tipo 'Estas son las categorias disponibles:').\n3. Explorar Menu: al mostrar productos de una categoria, incluye para CADA producto: nombre, precio, y su descripcion completa presentada claramente como lo que contiene (ej. 'Contiene: pollo desmenuzado, lechuga y salsa de la casa'), tomando el texto exacto de la columna descripcion de MENU, sin resumirlo ni omitirlo. El usuario debe poder decidir sin necesidad de preguntar que trae el producto. Junto a cada producto usa el emoji que MEJOR represente ese producto especifico (no un emoji fijo por categoria), por ejemplo: cafe caliente = ☕, gaseosa o bebida fria = 🥤, jugo = 🧃, agua = 💧, papas fritas o snacks salados = 🍟, panaderia o pasteleria = 🥐, sandwich = 🥪, postre dulce = 🍰, helado = 🍨, pizza = 🍕. Si un producto no calza con ninguno de estos, elige el emoji de comida o bebida generico mas cercano a su nombre real. IMPORTANTE: el texto de cada boton de producto TAMBIEN debe incluir ese mismo emoji junto al nombre (ej. texto del boton: '☕ Espresso - $3000'), nunca solo el nombre sin emoji. Arma un boton por producto con su id_item como callback_data. Agrega ademas un boton final 'Volver a categorias' (callback_data VOLVER_CATEGORIAS) para que el usuario pueda regresar sin elegir un producto.\n4. Seleccion - Paso A (elegir producto): cuando el usuario toque el boton de un producto (callback_data = id_item), NO lo agregues al carrito todavia. Guarda ese id_item en la columna ultimo_item_seleccionado de SESSIONS y el estado_conversacion en 'esperando_cantidad' (usa Gestionar Sesion). Responde recordando brevemente que contiene el producto (usa de nuevo la columna descripcion) y preguntando cuantas unidades desea, mostrando en 'mensaje' algo como '☕ <nombre_producto> - Contiene: <descripcion>. Cuantas unidades deseas?' (con el emoji del producto) y botones de cantidad rapida: '1️⃣' (callback_data QTY_1), '2️⃣' (callback_data QTY_2), '3️⃣' (callback_data QTY_3), '4️⃣' (callback_data QTY_4), y un boton adicional '⬅️ Volver' (callback_data VOLVER_PRODUCTO) para que el usuario pueda regresar a la lista de productos sin elegir cantidad. Aclara en el mensaje que tambien puede escribir el numero que quiera si desea mas de 4 (ej. 'o escribe la cantidad que quieras').\n5. Seleccion - Paso B (recibir cantidad o volver): si el estado_conversacion guardado en SESSIONS es 'esperando_cantidad':\n   - Si el mensaje es el boton VOLVER_PRODUCTO, cambia estado_conversacion de vuelta a 'explorando', no agregues nada al carrito, y vuelve a mostrar la lista de productos de la ultima categoria consultada (botones con emoji, ver punto 3).\n   - Si el mensaje es un boton QTY_1 a QTY_4, o un texto libre que contenga un numero entero positivo, interpreta ese numero como la cantidad. Lee ultimo_item_seleccionado de SESSIONS para saber que producto es. Valida que el stock disponible alcance para esa cantidad con Leer Menu; si no alcanza, informa el maximo disponible y vuelve a preguntar la cantidad (con el boton Volver incluido de nuevo). Si alcanza, agrega el producto con esa cantidad al carrito_temp, cambia estado_conversacion de vuelta a 'explorando', y pregunta amablemente si desea algo mas (botones: '➕ Agregar otro' y '✅ Finalizar pedido').\n   - Si el usuario escribe texto que no es un numero valido y no es el boton Volver, pide amablemente que indique un numero valido o toque Volver.\n6. Resumen del carrito: usa siempre el mismo emoji especifico de cada producto, mostrando cantidad x producto (ej. '2x Espresso'), nunca un emoji generico repetido.\n7. Confirmacion de Carrito: muestra un resumen claro con subtotales y el total acumulado en 'mensaje', pidiendo confirmacion explicita con botones 'Confirmar pedido' (callback_data CONFIRMAR) y 'Cancelar' (callback_data CANCELAR).\n8. Metodo de Pago: cuando el usuario confirme el carrito (CONFIRMAR), NO proceses el pedido todavia. Pregunta primero con que metodo de pago va a pagar, mostrando en 'mensaje' algo como 'Como deseas pagar tu pedido?' y botones con las opciones: 'Efectivo' (callback_data EFECTIVO), 'Tarjeta' (callback_data TARJETA), 'Transferencia' (callback_data TRANSFERENCIA).\n9. Procesamiento y Notificaciones: solo cuando el usuario elija un metodo de pago, genera el pedido: crea el id_pedido, descuenta stock, registra en PEDIDOS guardando el metodo de pago elegido en la columna pago, limpia el carrito, y responde con el ID generado, el total y el metodo de pago confirmado en 'mensaje', botones vacios []. En el momento de notificar a la cocina se envia exactamente el mismo 'mensaje' que recibe el usuario (esto lo maneja el flujo automaticamente, tu solo debes generar el mensaje final una sola vez).\n10. Comando /estado: busca el pedido mas reciente del usuario por chat_id en PEDIDOS y responde informando el estado actual en 'mensaje', botones [].\n11. Comando /cancelar: si el usuario tiene un carrito_temp activo en SESSIONS, borralo (usa Gestionar Sesion para dejar carrito_temp vacio y estado_conversacion en 'inicio'), y responde confirmando que el pedido en curso fue cancelado, botones []. Si no habia ningun carrito activo, informa amablemente que no habia ningun pedido en proceso.\n12. Comando /ayuda: responde en 'mensaje' con una explicacion breve de lo que puede hacer el bot (ver menu, armar carrito con cantidad, confirmar pedido, elegir metodo de pago, consultar estado con /estado, cancelar con /cancelar), botones [].\n\nRESTRICCIONES FINALES: no proceses pagos reales, el metodo de pago que preguntas es solo informativo para que el usuario pague fisicamente en caja o transferencia por su cuenta. No compartas datos personales o de otros usuarios bajo ninguna circunstancia. Manten un uso moderado de emojis (☕🥐📦✅) en las respuestas."
         }
       },
-      "id": "9e8574e7-9e1d-4e9d-8ef4-d2ffe1db04db",
+      "id": "7013401c-aa9c-4efa-8f71-72d6518a6544",
       "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
       "position": [
-        -400,
-        48
+        -928,
+        0
       ]
     },
     {
@@ -84,13 +84,13 @@
           "temperature": 0.3
         }
       },
-      "id": "ed2e7cae-d2b1-4357-b697-83c69415771d",
+      "id": "37be1640-ada3-4591-a4a9-5eec096437ae",
       "name": "Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
       "position": [
-        -480,
-        320
+        -1008,
+        272
       ],
       "credentials": {
         "googlePalmApi": {
@@ -105,13 +105,13 @@
         "sessionKey": "={{ $('Normalizar Entrada').item.json.chat_id }}",
         "contextWindowLength": 15
       },
-      "id": "3c431958-f67d-4dd0-963d-26fdc3d92bb3",
+      "id": "b5c72c0c-944e-45fc-b9fa-c82aa20cfb5f",
       "name": "Memory",
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.3,
       "position": [
-        -304,
-        320
+        -832,
+        272
       ]
     },
     {
@@ -134,13 +134,13 @@
         },
         "options": {}
       },
-      "id": "bfe64f62-c509-435a-986a-9aeef715a2a3",
+      "id": "ef14109a-ed67-42ec-b6b8-159e1005fb08",
       "name": "Leer Menu",
       "type": "n8n-nodes-base.googleSheetsTool",
       "typeVersion": 4.5,
       "position": [
-        -80,
-        304
+        -608,
+        256
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
@@ -233,13 +233,13 @@
         },
         "options": {}
       },
-      "id": "ac6ab338-7bed-4d29-9417-38b6b68a2426",
+      "id": "bcc308e7-8488-47c4-bdfa-1a60babc4951",
       "name": "Gestionar Sesion",
       "type": "n8n-nodes-base.googleSheetsTool",
       "typeVersion": 4.5,
       "position": [
-        64,
-        304
+        -464,
+        256
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
@@ -251,7 +251,7 @@
     {
       "parameters": {
         "descriptionType": "manual",
-        "toolDescription": "Descuenta el stock de un producto en la hoja MENU despues de confirmar un pedido. Usa id_producto como columna de coincidencia y el nuevo valor de stock ya calculado.",
+        "toolDescription": "Descuenta el stock de un producto en la hoja MENU despues de confirmar un pedido. Usa id_item como columna de coincidencia y el nuevo valor de stock ya calculado (stock actual menos la cantidad comprada). NO modifica ningun otro campo del producto.",
         "operation": "update",
         "documentId": {
           "__rl": true,
@@ -270,13 +270,13 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
+            "id_item": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('id_item__using_to_match_', ``, 'string') }}",
             "stock": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('stock', ``, 'string') }}",
             "row_number": 0,
-            "nombre": "={{ $json.nombre_usuario }}",
-            "categoria": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('categoria', ``, 'string') }}",
-            "id_item": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('id_item__using_to_match_', ``, 'string') }}",
-            "precio": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('precio', ``, 'string') }}",
+            "nombre": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('nombre', ``, 'string') }}",
             "descripcion": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('descripcion', ``, 'string') }}",
+            "precio": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('precio', ``, 'string') }}",
+            "categoria": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('categoria', ``, 'string') }}",
             "activo": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('activo', ``, 'string') }}"
           },
           "matchingColumns": [
@@ -369,13 +369,13 @@
         },
         "options": {}
       },
-      "id": "8eb85860-dfca-4270-b38c-1f0cd44b03b2",
+      "id": "14cd56e9-ad34-4019-9b28-e35a5aa5d043",
       "name": "Descontar Stock",
       "type": "n8n-nodes-base.googleSheetsTool",
       "typeVersion": 4.5,
       "position": [
-        224,
-        304
+        -304,
+        256
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
@@ -387,8 +387,8 @@
     {
       "parameters": {
         "descriptionType": "manual",
-        "toolDescription": "Registra un pedido confirmado en la hoja PEDIDOS. Campos: id_pedido (formato ORD-2026-XXXXXX), id_usuario (telegram_id), detalles_pedido (JSON string del carrito), total_pago, estado (inicial 'recibido'), fecha (AAAA-MM-DD), hora (HH:MM).",
-        "operation": "append",
+        "toolDescription": "Registra un pedido confirmado en la hoja PEDIDOS. Campos: id_pedido (formato ORD-2026-XXXXXX), id_usuario (chat_id), fecha_hora, items (JSON string del carrito), total, estado (inicial 'recibido'), pago (metodo de pago elegido: efectivo, tarjeta o transferencia).",
+        "operation": "appendOrUpdate",
         "documentId": {
           "__rl": true,
           "value": "1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc",
@@ -409,12 +409,14 @@
             "id_pedido": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('id_pedido', ``, 'string') }}",
             "id_usuario": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('id_usuario', ``, 'string') }}",
             "estado": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('estado', ``, 'string') }}",
-            "notas": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('notas', ``, 'string') }}",
             "total": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('total', ``, 'string') }}",
             "items": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('items', ``, 'string') }}",
-            "fecha_hora": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('fecha_hora', ``, 'string') }}"
+            "fecha_hora": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('fecha_hora', ``, 'string') }}",
+            "notas": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('notas', ``, 'string') }}"
           },
-          "matchingColumns": [],
+          "matchingColumns": [
+            "id_pedido"
+          ],
           "schema": [
             {
               "id": "id_pedido",
@@ -423,7 +425,8 @@
               "defaultMatch": false,
               "display": true,
               "type": "string",
-              "canBeUsedToMatch": true
+              "canBeUsedToMatch": true,
+              "removed": false
             },
             {
               "id": "id_usuario",
@@ -489,13 +492,13 @@
         },
         "options": {}
       },
-      "id": "3013dcb4-5536-44c0-85c5-14693619e428",
+      "id": "d1015ebe-e4b1-4449-b4f4-5e79adf53d1b",
       "name": "Registrar Pedido",
       "type": "n8n-nodes-base.googleSheetsTool",
       "typeVersion": 4.5,
       "position": [
-        368,
-        304
+        -160,
+        256
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
@@ -507,7 +510,7 @@
     {
       "parameters": {
         "descriptionType": "manual",
-        "toolDescription": "Consulta el pedido mas reciente de un usuario en la hoja PEDIDOS filtrando por id_usuario (telegram_id), para responder al comando /estado.",
+        "toolDescription": "Consulta el pedido mas reciente de un usuario en la hoja PEDIDOS filtrando por id_usuario (chat_id), para responder al comando /estado.",
         "documentId": {
           "__rl": true,
           "value": "1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc",
@@ -524,13 +527,13 @@
         },
         "options": {}
       },
-      "id": "75c389f8-bca5-4490-8bf2-f5978f255115",
+      "id": "41ca1e00-eb62-4e74-b977-90939b7ca56f",
       "name": "Consultar Estado Pedido",
       "type": "n8n-nodes-base.googleSheetsTool",
       "typeVersion": 4.5,
       "position": [
-        528,
-        304
+        0,
+        256
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
@@ -543,13 +546,13 @@
       "parameters": {
         "jsCode": "const raw = $input.first().json.output;\nlet parsed;\ntry {\n  const cleaned = typeof raw === 'string' ? raw.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim() : raw;\n  parsed = typeof cleaned === 'string' ? JSON.parse(cleaned) : cleaned;\n} catch (e) {\n  parsed = { mensaje: String(raw), botones: [] };\n}\n\nconst mensaje = parsed.mensaje || String(raw);\nconst botonesRaw = Array.isArray(parsed.botones) ? parsed.botones : [];\n\nconst inline_keyboard = botonesRaw.map(fila =>\n  (Array.isArray(fila) ? fila : [fila]).map(b => ({\n    text: b.texto || b.text || 'Opcion',\n    callback_data: String(b.callback_data || b.texto || b.text || 'NA').slice(0, 64)\n  }))\n).filter(fila => fila.length > 0);\n\nreturn [{\n  json: {\n    mensaje,\n    tiene_botones: inline_keyboard.length > 0,\n    reply_markup: inline_keyboard.length > 0 ? { inline_keyboard } : undefined\n  }\n}];"
       },
-      "id": "f6c24e93-a75a-46f2-a67e-a3866d93c2fb",
+      "id": "6634e960-dea7-4324-a895-b113176a21d3",
       "name": "Parsear Respuesta IA",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -64,
-        -64
+        -592,
+        -112
       ]
     },
     {
@@ -563,13 +566,13 @@
         "jsonBody": "={{ JSON.stringify({ chat_id: $('Normalizar Entrada').item.json.chat_id, text: $json.mensaje, reply_markup: $json.reply_markup }) }}\n",
         "options": {}
       },
-      "id": "9edadfdd-e0da-4b99-b5b3-7bba6d270d64",
+      "id": "6f38a69b-5ce0-4bae-8c2f-af69922dc626",
       "name": "Telegram - Responder Usuario",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        256,
-        -64
+        -272,
+        -112
       ],
       "credentials": {
         "telegramApi": {
@@ -602,13 +605,13 @@
         },
         "options": {}
       },
-      "id": "e5891f6f-9f50-41c4-92ba-255281b8446a",
+      "id": "19adfe8f-6882-4325-ae72-963d70973919",
       "name": "¿Es pedido nuevo?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        96,
-        -272
+        -432,
+        -320
       ]
     },
     {
@@ -622,18 +625,136 @@
         "jsonBody": "={{ JSON.stringify({ chat_id: -5520356545, text: $json.mensaje }) }}",
         "options": {}
       },
-      "id": "19a087e4-c322-48b8-b85f-6965e1b260f7",
+      "id": "65892c15-31ed-482e-b0b3-33a984c6ef22",
       "name": "Telegram - Notificar Cocina",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        336,
-        -288
+        -192,
+        -336
       ],
       "credentials": {
         "telegramApi": {
           "id": "njr5y0njjdh8afgW",
           "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Verifica si el usuario (chat_id) ya existe en la hoja USUARIOS al inicio de la conversacion. Usa Append or Update Row con chat_id como columna de coincidencia. Si el usuario no existia, se crea con id_usuario, chat_id, nombre, rol 'cliente', fecha_registro, activo TRUE y puntos_lealtad 0. Si ya existia, no sobreescribas puntos_lealtad ni fecha_registro.",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc",
+          "mode": "list",
+          "cachedResultName": "Menu_DeliveryBot",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1650446909,
+          "mode": "list",
+          "cachedResultName": "USUARIOS",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit#gid=1650446909"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "chat_id": "={{ $json.chat_id }}",
+            "id_usuario": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('id_usuario', ``, 'string') }}",
+            "nombre": "={{ $json.nombre_usuario }}",
+            "rol": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('rol', ``, 'string') }}",
+            "fecha_registro": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('fecha_registro', ``, 'string') }}",
+            "activo": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('activo', ``, 'string') }}",
+            "puntos_lealtad": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('puntos_lealtad', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "chat_id"
+          ],
+          "schema": [
+            {
+              "id": "id_usuario",
+              "displayName": "id_usuario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre",
+              "displayName": "nombre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "rol",
+              "displayName": "rol",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_registro",
+              "displayName": "fecha_registro",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "activo",
+              "displayName": "activo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "puntos_lealtad",
+              "displayName": "puntos_lealtad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "bcf5813e-ea0b-4731-bbcf-b95a4ff577a9",
+      "name": "Gestionar Usuario",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        176,
+        256
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "mhSsizPC3huxuh4A",
+          "name": "Google Sheets account"
         }
       }
     }
@@ -776,6 +897,17 @@
           }
         ]
       ]
+    },
+    "Gestionar Usuario": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -783,12 +915,11 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "79e47bde-52a2-4223-9262-d88b1d2d2972",
+  "versionId": "723b849a-297a-4aa4-ac92-7aed078418f4",
   "meta": {
-    "templateCredsSetupCompleted": true,
     "instanceId": "d159dc4a8a680e678d27582abb8d367a57681992380625e77a36298de76ab60f"
   },
   "nodeGroups": [],
-  "id": "b3Dmmj2yi5GpLHWz",
+  "id": "LFbEQYKeCoWlyvsw",
   "tags": []
 }
