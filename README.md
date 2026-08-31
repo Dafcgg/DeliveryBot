@@ -10,7 +10,7 @@ DeliveryBot es una terminal de pedidos inteligente pensada para oficinas, univer
 
 Toda la información operativa (menú, pedidos y sesiones activas) se centraliza en una única base de datos en Google Sheets, sin necesidad de una app dedicada ni infraestructura de backend propia.
 
-## 🎯 Objetivos
+##  Objetivos
 
 - Digitalizar y agilizar el proceso de pedidos internos de una cafetería.
 - Reducir errores humanos en la toma de pedidos y el control de stock en tiempo real.
@@ -46,7 +46,7 @@ El nodo Telegram estándar de n8n solo permite definir un `inline_keyboard` fijo
 ## 🗄️ Base de datos (Google Sheets)
 
 **Nombre del archivo:** `Menu_DeliveryBot`
-**Enlace:** _[pegar aquí el enlace compartido de tu Google Sheet configurado con datos de prueba]_
+**Enlace:** _[(https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit?usp=sharing)]_
 
 ### Pestaña `MENU`
 | Columna | Tipo | Descripción |
@@ -143,27 +143,3 @@ El texto completo del prompt del sistema —con las reglas de formato de salida 
 - Comando `/ayuda`.
 
 ---
-
-## 📁 Estructura del repositorio
-
-```
-Proyecto_DeliveryBot_ApellidoNombre/
-├── README.md
-├── /workflow
-│   └── DeliveryBot - Flujo principal.json
-├── /docs
-│   ├── 01_system_prompt.md
-│   └── 02_guia_google_sheets.md
-└── /assets
-    └── diagrama_arquitectura.png
-```
-
----
-
-## 👤 Autor
-
-[Nombre completo] — Estudiante de Desarrollo de Software, Campuslands.
-
-## 📄 Licencia
-
-Proyecto académico/formativo. Uso libre para fines educativos.
