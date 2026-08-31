@@ -1,4 +1,4 @@
-# Proyecto DeliveryBot — [Apellido][Nombre]
+# Proyecto DeliveryBot — Dilan Fonseca
 
 Sistema de gestión de pedidos internos para cafeterías, construido sobre **n8n**, **Telegram** y **Google Sheets**, con un agente de Inteligencia Artificial conversacional (Google Gemini) como núcleo de interacción.
 
