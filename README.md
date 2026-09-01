@@ -1,16 +1,16 @@
-# Proyecto DeliveryBot — [Apellido][Nombre]
+# Proyecto DeliveryBot — [Dilan Fonseca]
 
 Sistema de gestión de pedidos internos para cafeterías, construido sobre **n8n**, **Telegram** y **Google Sheets**, con un agente de Inteligencia Artificial conversacional (Google Gemini) como núcleo de interacción.
 
 ---
 
-## 📋 Descripción del proyecto
+##  Descripción del proyecto
 
 DeliveryBot es una terminal de pedidos inteligente pensada para oficinas, universidades o centros de trabajo. A través de un bot de Telegram con **botones interactivos (inline keyboard)**, los usuarios pueden explorar el menú de la cafetería por categorías, elegir productos con cantidad exacta, armar un carrito, confirmar su pedido, seleccionar método de pago y recibir un número de orden — mientras el personal de cocina recibe cada pedido confirmado en tiempo real, en un grupo de Telegram dedicado, y puede marcarlo como listo para avisar automáticamente al cliente.
 
 Toda la información operativa (menú, pedidos y sesiones activas) se centraliza en una única base de datos en Google Sheets, sin necesidad de una app dedicada ni infraestructura de backend propia.
 
-## 🎯 Objetivos
+##  Objetivos
 
 - Digitalizar y agilizar el proceso de pedidos internos de una cafetería.
 - Reducir errores humanos en la toma de pedidos y el control de stock en tiempo real.
@@ -33,7 +33,7 @@ El flujo principal (`DeliveryBot - Flujo principal.json`) se construye en n8n co
 | Normalización | Set ("Normalizar Entrada") | Extrae de forma unificada `chat_id`, `texto_usuario` y `nombre_usuario`, sin importar si el evento vino de un mensaje de texto o de un botón presionado. |
 | Enrutamiento cocina/cliente | IF ("¿Es confirmacion de cocina?") | Revisa si `texto_usuario` corresponde al botón `LISTO_<id_pedido>` que presiona cocina. Si es así, desvía la ejecución a la rama de "pedido listo" y **nunca** llega al AI Agent; en caso contrario sigue el flujo normal con el cliente. |
 | Cerebro conversacional | AI Agent (Tools Agent) | Interpreta la intención del usuario y ejecuta el flujo wizard completo: Bienvenida → Explorar Menú → Selección de producto → Cantidad → Confirmación de Carrito → Método de Pago → Procesamiento. |
-| Modelo de lenguaje | Chat Model (Google Gemini `gemini-3.5-flash-lite`) | Motor de lenguaje que impulsa al AI Agent. ⚠️ Ver sección "Problemas conocidos". |
+| Modelo de lenguaje | Chat Model (Google Gemini `gemini-3.5-flash-lite`) | Motor de lenguaje que impulsa al AI Agent. |
 | Memoria | Memory (Buffer Window) | Mantiene el contexto de la conversación durante la sesión activa del usuario, indexado por `chat_id`. |
 | Herramientas | 5 Tools (Google Sheets) | Leer Menu, Gestionar Sesion, Descontar Stock, Registrar Pedido, Consultar Estado Pedido. |
 | Parseo de salida | Code ("Parsear Respuesta IA") | Convierte la respuesta JSON estructurada del agente (`mensaje` + `botones`) en un objeto listo para construir el teclado interactivo de Telegram, con manejo de errores si el modelo no respeta el formato. |
@@ -48,10 +48,10 @@ El nodo Telegram estándar de n8n solo permite definir un `inline_keyboard` fijo
 
 ---
 
-## 🗄️ Base de datos (Google Sheets)
+##  Base de datos (Google Sheets)
 
 **Nombre del archivo:** `Menu_DeliveryBot`
-**Enlace:** _[pegar aquí el enlace compartido de tu Google Sheet configurado con datos de prueba]_
+**Enlace:** _[https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit?usp=sharing]_
 
 ### Pestaña `MENU`
 | Columna | Tipo | Descripción |
@@ -134,20 +134,6 @@ El nodo Telegram estándar de n8n solo permite definir un `inline_keyboard` fijo
 
 ---
 
-## 🧠 System Prompt del AI Agent
-
-El texto completo del prompt del sistema —con las reglas de formato de salida (JSON con `mensaje` y `botones`), el flujo conversacional detallado paso a paso, la regla de fusión/corrección de cantidades, la regla crítica de ejecución (no confirmar pedidos sin haber escrito realmente en Google Sheets), las reglas de uso de herramientas y las restricciones de negocio— se encuentra documentado en el archivo `01_system_prompt.md` incluido en este repositorio, y debe copiarse tal cual en el campo "System Message" del nodo AI Agent en n8n.
-
----
-
-## ⚠️ Problemas conocidos / trabajo en progreso
-
-- **Modelo del Chat Model (`gemini-3.5-flash-lite`)**: es el modelo más económico de la familia Gemini, pero tiene fiabilidad limitada para *tool-calling* encadenado (llamar varias herramientas en secuencia dentro de un mismo turno, como descontar stock y luego registrar el pedido). Se recomienda migrar a un modelo "Flash" completo (no "lite") o a un proveedor con tool-calling más maduro (OpenAI, por ejemplo) antes de pasar a producción real. Mientras tanto, la "regla crítica de ejecución" en el System Prompt evita que el bot confirme pedidos falsos, pero no corrige la causa de fondo.
-- **Cálculo del nuevo stock**: la tool `Descontar Stock` depende de que el modelo lea el stock actual con `Leer Menu` y reste correctamente la cantidad comprada — no hay una validación matemática determinística fuera del LLM. Con el modelo actual esto puede fallar ocasionalmente. Se evaluó una versión con sub-workflow (lectura + resta en código + escritura, sin intervención del LLM en el cálculo) como alternativa más robusta si el problema persiste tras cambiar de modelo.
-- **Versión del nodo AI Agent**: el workflow fue construido sobre la versión 1.7 del nodo AI Agent de n8n (la más reciente disponible es 3.1). Versiones antiguas presentan un bug conocido donde el nodo Memory recibe más de una clave al cargar el historial de la conversación, generando errores intermitentes. Se recomienda actualizar el nodo a la última versión disponible.
-
----
-
 ## 🧪 Pruebas realizadas
 
 - Flujo completo: `/start` → elegir categoría → elegir producto → definir cantidad (por botón y por texto libre) → confirmar carrito → elegir método de pago → recibir ID de pedido.
@@ -160,29 +146,4 @@ El texto completo del prompt del sistema —con las reglas de formato de salida 
 - Comando `/estado` con y sin pedidos previos.
 - Comando `/cancelar` con carrito activo y sin carrito activo.
 - Comando `/ayuda`.
-
----
-
-## 📁 Estructura del repositorio
-
-```
-Proyecto_DeliveryBot_ApellidoNombre/
-├── README.md
-├── /workflow
-│   └── DeliveryBot - Flujo principal.json
-├── /docs
-│   ├── 01_system_prompt.md
-│   └── 02_guia_google_sheets.md
-└── /assets
-    └── diagrama_arquitectura.png
-```
-
----
-
-## 👤 Autor
-
-[Nombre completo] — Estudiante de Desarrollo de Software, Campuslands.
-
-## 📄 Licencia
-
-Proyecto académico/formativo. Uso libre para fines educativos.
+- Comando `/carrito`.
