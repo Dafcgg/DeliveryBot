@@ -1,0 +1,1548 @@
+{
+  "name": "DeliveryBot",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "id": "e4634419-b57d-4a76-9eb0-f7e845cc4c06",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1232,
+        560
+      ],
+      "webhookId": "deliverybot-webhook",
+      "credentials": {
+        "telegramApi": {
+          "id": "njr5y0njjdh8afgW",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b1",
+              "name": "chat_id",
+              "type": "string",
+              "value": "={{ $json.message?.chat?.id || $json.callback_query?.message?.chat?.id }}"
+            },
+            {
+              "id": "b2",
+              "name": "texto_usuario",
+              "type": "string",
+              "value": "={{ $json.message?.text || $json.callback_query?.data }}"
+            },
+            {
+              "id": "b3",
+              "name": "nombre_usuario",
+              "type": "string",
+              "value": "={{ $json.message?.from?.first_name || $json.callback_query?.from?.first_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b98c7026-fea6-4434-ab15-4d8c47ef2cc0",
+      "name": "Normalizar Entrada",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1040,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.texto_usuario }}",
+        "options": {
+          "systemMessage": "=REGLA CRITICA DE EJECUCION (obligatoria, no negociable): NUNCA redactes un mensaje de confirmación de pedido, un id_pedido, ni ninguna frase tipo \"pedido registrado\", \"pedido exitoso\" o similar, sin haber llamado PRIMERO, en este mismo turno, a las herramientas Descontar Stock y Registrar Pedido, en ese orden, para cada producto del carrito. No alcanza con que las hayas llamado en un turno anterior de la conversación: deben ejecutarse en el turno donde el usuario elige el método de pago. Si alguna de esas herramientas falla, devuelve un error, o no puede ejecutarse por cualquier motivo, NO generes un id_pedido ni redactes un mensaje de éxito: informa el problema con honestidad en 'mensaje' (ej. \"Hubo un problema al registrar tu pedido, por favor intenta de nuevo\") y no limpies el carrito_temp hasta que el registro se haya completado correctamente. Está prohibido simular, suponer o inventar que una escritura se realizó sin haber recibido la confirmación real de la herramienta correspondiente.                     Eres DeliveryBot, el asistente virtual de pedidos de la cafeteria. Atiendes a los usuarios por Telegram con un tono cercano, agil y profesional, como un barista digital eficiente. Nunca inventas productos, precios ni stock: toda esa informacion SOLO existe en las herramientas conectadas a Google Sheets.\n\nREGLA DE FORMATO DE SALIDA CRITICA: Tu respuesta final DEBE ser exclusivamente un objeto JSON valido, sin texto antes ni despues, sin markdown, con esta forma exacta:\n{\"mensaje\": \"texto en texto plano, sin asteriscos ni backticks, usando MAYUSCULAS o guiones para destacar\", \"botones\": [[{\"texto\": \"Espresso\", \"callback_data\": \"M001\"}], [{\"texto\": \"Otra opcion\", \"callback_data\": \"OTRO\"}]]}\nCada fila de 'botones' es un array de botones (maximo 2 botones por fila). Si no corresponde mostrar botones en ese momento (errores), deja 'botones' como un array vacio []. El campo 'callback_data' debe ser el id_item real cuando el boton representa un producto, o una palabra corta en mayusculas para acciones (ej. CONFIRMAR, CANCELAR, EFECTIVO, TARJETA, TRANSFERENCIA).\n\nOBJETIVO: guiar al usuario por un flujo wizard de 5 etapas: 1) Explorar Menu, 2) Seleccion de productos y carrito, 3) Confirmacion de Carrito, 4) Metodo de Pago, 5) Procesamiento y generacion de ID de pedido.\n\nDATOS REALES DE LA HOJA (usa exactamente estos nombres de columna, no otros):\nMENU (id_item, categoria, nombre, descripcion, precio, stock, activo)\nPEDIDOS (id_pedido, id_usuario, fecha_hora, items, total, estado, pago)\nSESSIONS (chat_id, estado_conversacion, carrito_temp, ultimo_item_seleccionado, timestamp_actualizacion)\nUSUARIOS (id_usuario, chat_id, nombre, rol, fecha_registro, activo, puntos_lealtad)\nUsa siempre chat_id del usuario e id_item del producto como claves unicas, nunca nombres.\n\nREGLAS DE TOOLS Y DATOS:\n1. Antes de mostrar el menu, usa la herramienta Leer Menu y filtra stock mayor a 0 y activo verdadero.\n2. Antes de confirmar un producto en el carrito, valida de nuevo el stock con Leer Menu.\n3. Usa la herramienta Gestionar Sesion para leer y guardar el carrito_temp en SESSIONS mientras el usuario decide (columna de coincidencia: chat_id).\n4. Al inicio de CADA conversacion nueva (primer mensaje del chat_id en la sesion actual, o cuando llega /start), usa la herramienta Gestionar Usuario para verificar si el chat_id ya existe en USUARIOS. Si no existe, crealo con: id_usuario (genera uno tipo USR-XXXXXX), chat_id, nombre (usa el nombre de Telegram del usuario), rol 'cliente', fecha_registro (fecha actual AAAA-MM-DD), activo TRUE, puntos_lealtad 0. Si el chat_id ya existe, no sobreescribas puntos_lealtad ni fecha_registro, solo actualiza el nombre si cambio y activo en TRUE. Esto se hace de forma silenciosa, sin mencionarlo en el mensaje al usuario ni pedirle confirmacion.\n5. Solo al confirmar el pedido final (despues de elegir metodo de pago): genera un id_pedido con formato ORD-2026-XXXXXX, utiliza Descontar Stock para actualizar el inventario en MENU (columna de coincidencia: id_item), usa Registrar Pedido para escribir el registro en PEDIDOS con estado inicial RECIBIDO y el metodo de pago elegido en la columna pago, y limpia el carrito_temp en SESSIONS.\n\n5b. FUSION Y CORRECCION DE CANTIDADES (regla critica para evitar duplicados o perdidas): antes de escribir una linea nueva en carrito_temp, revisa si ese mismo id_item ya existe como linea en el carrito actual.\n- Si el usuario agrega mas unidades del mismo producto en una interaccion posterior SIN usar palabras de correccion (ej. selecciono Espresso, puso 2, luego volvio a elegir Espresso y puso 5, sin decir 'cambia' ni 'en realidad'), SUMA la nueva cantidad a la cantidad ya existente en esa misma linea. Nunca crees una segunda linea para el mismo id_item ni sobreescribas la cantidad anterior por error. En el mensaje de confirmacion aclara el acumulado, ej: 'Ahora tienes 7x Espresso en tu carrito (2 previas + 5 nuevas).'\n- Si el usuario usa palabras explicitas de correccion o cambio (ej. 'cambia a', 'en realidad son', 'corrige a', 'no quiero 2 sino 5', 'mejor que sean'), interpreta eso como REEMPLAZO de la cantidad de esa linea (no suma), y acláralo en el mensaje, ej: 'Actualice tu pedido a 5x Espresso (antes tenias 2x).'\n- Ante ambiguedad genuina sobre si el usuario quiere sumar o corregir, NO escribas en carrito_temp todavia: pregunta explicitamente cual de las dos opciones desea.\n- Esta regla aplica sobre el carrito_temp guardado en SESSIONS (fuente de verdad), no solo sobre lo que recuerdes de la conversacion: siempre lee el carrito_temp actual con Gestionar Sesion antes de decidir si sumas, reemplazas o preguntas.\n\n6. Nunca ejecutes una operacion de escritura sin la confirmacion explicita del usuario (esta regla no aplica al registro automatico en USUARIOS del punto 4, que es transparente para el usuario).\n7. Si alguna herramienta falla o devuelve un resultado vacio, informa el error amablemente en el campo 'mensaje' y no inventes datos.\n\nFLUJO CONVERSACIONAL Y VISUAL:\n1. Bienvenida: si el mensaje es /start o es la primera interaccion, saluda calidamente, presenta las categorias e incluye emojis representativos. IMPORTANTE: los botones tambien deben llevar el emoji dentro del texto del boton, no solo en el mensaje (ej. texto del boton: '☕ Bebidas', '🍽️ Comida'), nunca botones sin emoji.\n2. Comando /menu: funciona igual que la bienvenida, muestra de nuevo las categorias disponibles con sus botones (con emoji incluido en cada boton), sin repetir el saludo completo (solo un mensaje breve tipo 'Estas son las categorias disponibles:').\n3. Explorar Menu: al mostrar productos de una categoria, incluye para CADA producto: nombre, precio, y su descripcion completa presentada claramente como lo que contiene (ej. 'Contiene: pollo desmenuzado, lechuga y salsa de la casa'), tomando el texto exacto de la columna descripcion de MENU, sin resumirlo ni omitirlo. El usuario debe poder decidir sin necesidad de preguntar que trae el producto. Junto a cada producto usa el emoji que MEJOR represente ese producto especifico (no un emoji fijo por categoria), por ejemplo: cafe caliente = ☕, gaseosa o bebida fria = 🥤, jugo = 🧃, agua = 💧, papas fritas o snacks salados = 🍟, panaderia o pasteleria = 🥐, sandwich = 🥪, postre dulce = 🍰, helado = 🍨, pizza = 🍕. Si un producto no calza con ninguno de estos, elige el emoji de comida o bebida generico mas cercano a su nombre real. IMPORTANTE: el texto de cada boton de producto TAMBIEN debe incluir ese mismo emoji junto al nombre (ej. texto del boton: '☕ Espresso - $3000'), nunca solo el nombre sin emoji. Arma un boton por producto con su id_item como callback_data. Agrega ademas un boton final 'Volver a categorias' (callback_data VOLVER_CATEGORIAS) para que el usuario pueda regresar sin elegir un producto.\n4. Seleccion - Paso A (elegir producto): cuando el usuario toque el boton de un producto (callback_data = id_item), NO lo agregues al carrito todavia. Guarda ese id_item en la columna ultimo_item_seleccionado de SESSIONS y el estado_conversacion en 'esperando_cantidad' (usa Gestionar Sesion). Responde recordando brevemente que contiene el producto (usa de nuevo la columna descripcion) y preguntando cuantas unidades desea, mostrando en 'mensaje' algo como '☕ <nombre_producto> - Contiene: <descripcion>. Cuantas unidades deseas?' (con el emoji del producto) y botones de cantidad rapida: '1️⃣' (callback_data QTY_1), '2️⃣' (callback_data QTY_2), '3️⃣' (callback_data QTY_3), '4️⃣' (callback_data QTY_4), y un boton adicional '⬅️ Volver' (callback_data VOLVER_PRODUCTO) para que el usuario pueda regresar a la lista de productos sin elegir cantidad. Aclara en el mensaje que tambien puede escribir el numero que quiera si desea mas de 4 (ej. 'o escribe la cantidad que quieras').\n5. Seleccion - Paso B (recibir cantidad o volver): si el estado_conversacion guardado en SESSIONS es 'esperando_cantidad':\n   - Si el mensaje es el boton VOLVER_PRODUCTO, cambia estado_conversacion de vuelta a 'explorando', no agregues nada al carrito, y vuelve a mostrar la lista de productos de la ultima categoria consultada (botones con emoji, ver punto 3).\n   - Si el mensaje es un boton QTY_1 a QTY_4, o un texto libre que contenga un numero entero positivo, interpreta ese numero como la cantidad. Lee ultimo_item_seleccionado de SESSIONS para saber que producto es. Valida que el stock disponible alcance para esa cantidad con Leer Menu; si no alcanza, informa el maximo disponible y vuelve a preguntar la cantidad (con el boton Volver incluido de nuevo). Si alcanza, agrega el producto con esa cantidad al carrito_temp, cambia estado_conversacion de vuelta a 'explorando', y pregunta amablemente si desea algo mas (botones: '➕ Agregar otro' y '✅ Finalizar pedido').\n   - Si el usuario escribe texto que no es un numero valido y no es el boton Volver, pide amablemente que indique un numero valido o toque Volver.\n6. Resumen del carrito: usa siempre el mismo emoji especifico de cada producto, mostrando cantidad x producto (ej. '2x Espresso'), nunca un emoji generico repetido.\n7. Confirmacion de Carrito: muestra un resumen claro con subtotales y el total acumulado en 'mensaje', pidiendo confirmacion explicita con botones 'Confirmar pedido' (callback_data CONFIRMAR) y 'Cancelar' (callback_data CANCELAR).\n8. Metodo de Pago: cuando el usuario confirme el carrito (CONFIRMAR), NO proceses el pedido todavia. Pregunta primero con que metodo de pago va a pagar, mostrando en 'mensaje' algo como 'Como deseas pagar tu pedido?' y botones con las opciones: 'Efectivo' (callback_data EFECTIVO), 'Tarjeta' (callback_data TARJETA), 'Transferencia' (callback_data TRANSFERENCIA).\n9. Procesamiento y Notificaciones: solo cuando el usuario elija un metodo de pago, genera el pedido: crea el id_pedido, descuenta stock, registra en PEDIDOS guardando el metodo de pago elegido en la columna pago, limpia el carrito, y responde en 'mensaje' con: el ID generado, el DETALLE COMPLETO del pedido (cada producto con su cantidad y emoji, ej. '2x ☕ Espresso'), el total y el metodo de pago confirmado. Este mensaje debe ser lo bastante completo para que quien lo lea (incluyendo cocina) sepa exactamente que preparar sin necesidad de mirar nada mas. Botones vacios []. En el momento de notificar a la cocina se envia exactamente el mismo 'mensaje' que recibe el usuario (esto lo maneja el flujo automaticamente, tu solo debes generar el mensaje final una sola vez, con el detalle completo incluido).\n10. Comando /estado: busca el pedido mas reciente del usuario por chat_id en PEDIDOS y responde informando el estado actual en 'mensaje', botones [].\n11. Comando /cancelar: tiene DOS casos posibles, en este orden de prioridad:\n   a) CARRITO EN CURSO (aun no confirmado): si el usuario tiene un carrito_temp activo en SESSIONS (no vacio) y todavia no eligio metodo de pago, borralo (usa Gestionar Sesion para dejar carrito_temp vacio y estado_conversacion en 'inicio'), y responde confirmando que el pedido en curso fue cancelado, botones [].\n   b) PEDIDO YA CONFIRMADO: si no hay carrito_temp activo, usa Consultar Estado Pedido para buscar el pedido mas reciente del chat_id.\n      - Si no existe ningun pedido, informa amablemente que no hay ningun pedido en proceso ni reciente para cancelar, botones [].\n      - Si existe pero su estado NO es 'recibido' (por ejemplo ya esta 'listo', 'entregado' o 'cancelado'), informa que ese pedido ya no se puede cancelar porque ya esta en preparacion o fue procesado, y que debe hablar directamente con el mostrador. Botones [].\n      - Si existe y su estado es 'recibido', antes de cancelar pide confirmacion explicita mostrando el id_pedido y el resumen del pedido, con botones 'Si, cancelar pedido' (callback_data CONFIRMAR_CANCELACION) y 'No, mantener pedido' (callback_data MANTENER_PEDIDO).\n      - Cuando el usuario toque CONFIRMAR_CANCELACION: usa Cancelar Pedido para poner estado en 'cancelado' en PEDIDOS (columna de coincidencia id_pedido). Luego, por cada producto del campo items de ese pedido, usa Leer Menu para obtener el stock actual real y despues Restaurar Stock para devolver esa cantidad al stock (stock_nuevo = stock_actual + cantidad_del_pedido). Responde en 'mensaje' confirmando la cancelacion, incluyendo el id_pedido (formato ORD-2026-XXXXXX) y la palabra CANCELADO en mayusculas, botones []. Este mensaje se reenvia automaticamente a cocina para que sepan que no deben prepararlo.\n      - Si el usuario toca MANTENER_PEDIDO, confirma que el pedido sigue en curso sin cambios, botones [].\n12. Comando /ayuda: responde en 'mensaje' con una explicacion breve de lo que puede hacer el bot (ver menu, armar carrito con cantidad, confirmar pedido, elegir metodo de pago, consultar estado con /estado, cancelar con /cancelar), botones [].\n\nRESTRICCIONES FINALES: no proceses pagos reales, el metodo de pago que preguntas es solo informativo para que el usuario pague fisicamente en caja o transferencia por su cuenta. No compartas datos personales o de otros usuarios bajo ninguna circunstancia. Manten un uso moderado de emojis (☕🥐📦✅) en las respuestas."
+        }
+      },
+      "id": "c580873c-dbbd-430e-9ccb-4ff76a923d37",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -608,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Lee el catalogo de productos disponibles en la hoja MENU. Puedes filtrar por categoria. Usala para mostrar el menu y para validar stock antes de confirmar un producto.",
+        "documentId": {
+          "__rl": true,
+          "value": "1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc",
+          "mode": "list",
+          "cachedResultName": "Menu_DeliveryBot",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 2108793576,
+          "mode": "list",
+          "cachedResultName": "MENU",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit#gid=2108793576"
+        },
+        "options": {}
+      },
+      "id": "e66149a3-70f1-4558-b033-6b5dfdb084bd",
+      "name": "Leer Menu",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        -272,
+        832
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "mhSsizPC3huxuh4A",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Lee o guarda el estado de la sesion y el carrito temporal del usuario en la hoja SESSIONS. Usa Append or Update Row con telegram_id como clave para no duplicar filas. Campos: telegram_id, pantalla_actual, carrito_temporal (JSON string), ultimo_cambio.",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc",
+          "mode": "list",
+          "cachedResultName": "Menu_DeliveryBot",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1591357400,
+          "mode": "list",
+          "cachedResultName": "SESSIONS",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit#gid=1591357400"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "chat_id": "={{ $json.chat_id }}",
+            "timestamp_actualizacion": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('timestamp_actualizacion', ``, 'string') }}",
+            "ultimo_item_seleccionado": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('ultimo_item_seleccionado', ``, 'string') }}",
+            "carrito_temp": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('carrito_temp', ``, 'string') }}",
+            "estado_conversacion": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('estado_conversacion', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "chat_id"
+          ],
+          "schema": [
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "estado_conversacion",
+              "displayName": "estado_conversacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "carrito_temp",
+              "displayName": "carrito_temp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ultimo_item_seleccionado",
+              "displayName": "ultimo_item_seleccionado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "timestamp_actualizacion",
+              "displayName": "timestamp_actualizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "d69b8105-e488-44c5-881d-30931c9ddb61",
+      "name": "Gestionar Sesion",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        -128,
+        832
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "mhSsizPC3huxuh4A",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Descuenta el stock de UN producto en la hoja MENU despues de confirmar un pedido. USO OBLIGATORIO: antes de llamar esta herramienta, primero debes tener el stock actual real del producto (obtenido con la herramienta Leer Menu en este mismo turno o en un turno reciente de la conversacion). El campo 'stock' que envies aqui NUNCA debe ser inventado: debe ser exactamente el resultado de restar la cantidad comprada al stock actual real que obtuviste de Leer Menu (stock_nuevo = stock_actual - cantidad_comprada). Si no tienes el stock actual real disponible, llama primero a Leer Menu antes de usar esta herramienta. Si el resultado de la resta seria negativo, NO llames esta herramienta: en su lugar informa en tu respuesta que no hay stock suficiente. Usa id_item como columna de coincidencia. NO modifica ningun otro campo del producto (nombre, precio, descripcion, categoria, activo quedan igual).",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc",
+          "mode": "list",
+          "cachedResultName": "Menu_DeliveryBot",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 2108793576,
+          "mode": "list",
+          "cachedResultName": "MENU",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit#gid=2108793576"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id_item": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('id_item__using_to_match_', 'ID exacto del producto, tal como aparece en Leer Menu', 'string') }}",
+            "stock": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('stock', 'Nuevo stock ya calculado: stock_actual (de Leer Menu) menos la cantidad comprada. Nunca inventar este numero.', 'string') }}"
+          },
+          "matchingColumns": [
+            "id_item"
+          ],
+          "schema": [
+            {
+              "id": "id_item",
+              "displayName": "id_item",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "categoria",
+              "displayName": "categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "nombre",
+              "displayName": "nombre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "descripcion",
+              "displayName": "descripcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "precio",
+              "displayName": "precio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "stock",
+              "displayName": "stock",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "activo",
+              "displayName": "activo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "241f9273-b827-4fac-a4ba-11bea7545390",
+      "name": "Descontar Stock",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        32,
+        832
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "mhSsizPC3huxuh4A",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Registra un pedido confirmado en la hoja PEDIDOS. Campos: id_pedido (formato ORD-2026-XXXXXX), id_usuario (chat_id), fecha_hora, items (JSON string del carrito), total, estado (inicial 'recibido'), pago (metodo de pago elegido: efectivo, tarjeta o transferencia).",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc",
+          "mode": "list",
+          "cachedResultName": "Menu_DeliveryBot",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 133201244,
+          "mode": "list",
+          "cachedResultName": "PEDIDOS",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit#gid=133201244"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id_pedido": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('id_pedido__using_to_match_', ``, 'string') }}",
+            "id_usuario": "={{ $json.chat_id }}",
+            "estado": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('estado', ``, 'string') }}",
+            "total": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('total', ``, 'string') }}",
+            "items": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('items', ``, 'string') }}",
+            "fecha_hora": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('fecha_hora', ``, 'string') }}",
+            "pago": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('pago', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "id_pedido"
+          ],
+          "schema": [
+            {
+              "id": "id_pedido",
+              "displayName": "id_pedido",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "id_usuario",
+              "displayName": "id_usuario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fecha_hora",
+              "displayName": "fecha_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "items",
+              "displayName": "items",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "total",
+              "displayName": "total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "estado",
+              "displayName": "estado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "pago",
+              "displayName": "pago",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "0edcf37a-8452-4012-8f6e-323c8ba9d94d",
+      "name": "Registrar Pedido",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        176,
+        832
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "mhSsizPC3huxuh4A",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Consulta el pedido mas reciente de un usuario en la hoja PEDIDOS filtrando por id_usuario (chat_id), para responder al comando /estado.",
+        "documentId": {
+          "__rl": true,
+          "value": "1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc",
+          "mode": "list",
+          "cachedResultName": "Menu_DeliveryBot",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 133201244,
+          "mode": "list",
+          "cachedResultName": "PEDIDOS",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit#gid=133201244"
+        },
+        "options": {}
+      },
+      "id": "cbc8ed57-5354-4147-bbf6-b9696f9406e0",
+      "name": "Consultar Estado Pedido",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        336,
+        832
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "mhSsizPC3huxuh4A",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.output;\nlet parsed;\ntry {\n  const cleaned = typeof raw === 'string' ? raw.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim() : raw;\n  parsed = typeof cleaned === 'string' ? JSON.parse(cleaned) : cleaned;\n} catch (e) {\n  parsed = { mensaje: String(raw), botones: [] };\n}\n\nconst mensaje = parsed.mensaje || String(raw);\nconst botonesRaw = Array.isArray(parsed.botones) ? parsed.botones : [];\n\nconst inline_keyboard = botonesRaw.map(fila =>\n  (Array.isArray(fila) ? fila : [fila]).map(b => ({\n    text: b.texto || b.text || 'Opcion',\n    callback_data: String(b.callback_data || b.texto || b.text || 'NA').slice(0, 64)\n  }))\n).filter(fila => fila.length > 0);\n\nreturn [{\n  json: {\n    mensaje,\n    tiene_botones: inline_keyboard.length > 0,\n    reply_markup: inline_keyboard.length > 0 ? { inline_keyboard } : undefined\n  }\n}];"
+      },
+      "id": "46898095-9ca3-4129-97f3-622d0dfe5cf6",
+      "name": "Parsear Respuesta IA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8844152055:AAGNggO-ESHWeAQkC4HnjBQdQ7KIIL9jQ20/sendMessage",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "telegramApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Normalizar Entrada').item.json.chat_id, text: $json.mensaje, reply_markup: $json.reply_markup }) }}\n",
+        "options": {}
+      },
+      "id": "210752f6-f2b6-4458-8b90-52123a05adf8",
+      "name": "Telegram - Responder Usuario",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        176,
+        512
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "njr5y0njjdh8afgW",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.mensaje }}",
+              "rightValue": "ORD-2026-",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ea75cdf8-6b9c-4dde-a49a-fe3d6e3db3df",
+      "name": "¿Es pedido nuevo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        128,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8844152055:AAGNggO-ESHWeAQkC4HnjBQdQ7KIIL9jQ20/sendMessage",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "telegramApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: -5520356545, text: $json.mensaje, reply_markup: $json.reply_markup }) }}",
+        "options": {}
+      },
+      "id": "4d34f7c6-8a4d-4c86-8f65-35169e29b55d",
+      "name": "Telegram - Notificar Cocina",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        512,
+        288
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "njr5y0njjdh8afgW",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Verifica si el usuario (chat_id) ya existe en la hoja USUARIOS al inicio de la conversacion. Usa Append or Update Row con chat_id como columna de coincidencia. Si el usuario no existia, se crea con id_usuario, chat_id, nombre, rol 'cliente', fecha_registro, activo TRUE y puntos_lealtad 0. Si ya existia, no sobreescribas puntos_lealtad ni fecha_registro.",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc",
+          "mode": "list",
+          "cachedResultName": "Menu_DeliveryBot",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1650446909,
+          "mode": "list",
+          "cachedResultName": "USUARIOS",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit#gid=1650446909"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "chat_id": "={{ $json.chat_id }}",
+            "id_usuario": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('id_usuario', ``, 'string') }}",
+            "nombre": "={{ $json.nombre_usuario }}",
+            "rol": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('rol', ``, 'string') }}",
+            "fecha_registro": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('fecha_registro', ``, 'string') }}",
+            "activo": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('activo', ``, 'string') }}",
+            "puntos_lealtad": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('puntos_lealtad', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "chat_id"
+          ],
+          "schema": [
+            {
+              "id": "id_usuario",
+              "displayName": "id_usuario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre",
+              "displayName": "nombre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "rol",
+              "displayName": "rol",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_registro",
+              "displayName": "fecha_registro",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "activo",
+              "displayName": "activo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "puntos_lealtad",
+              "displayName": "puntos_lealtad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "25f11de7-52c0-4192-96e6-dd12c6205e85",
+      "name": "Gestionar Usuario",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        512,
+        832
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "mhSsizPC3huxuh4A",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "kc1",
+              "leftValue": "={{ $json.texto_usuario }}",
+              "rightValue": "LISTO_",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "35e34e2d-9ba5-4c89-8488-e6b05b2ab937",
+      "name": "¿Es confirmacion de cocina?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -864,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const texto = $json.texto_usuario || '';\nconst id_pedido = texto.replace('LISTO_', '').trim();\nreturn [{ json: { id_pedido, chat_id_cocina: $json.chat_id } }];"
+      },
+      "id": "7acab7bf-61fb-40b7-b0a3-15c0b1256f1f",
+      "name": "Extraer ID Pedido Confirmado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc",
+          "mode": "list",
+          "cachedResultName": "Menu_DeliveryBot",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 133201244,
+          "mode": "list",
+          "cachedResultName": "PEDIDOS",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit#gid=133201244"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "id_pedido",
+              "lookupValue": "={{ $json.id_pedido }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bc957f6e-c812-49ea-98a5-5de4371a4e82",
+      "name": "Buscar Pedido Por ID",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -512,
+        16
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "mhSsizPC3huxuh4A",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc",
+          "mode": "list",
+          "cachedResultName": "Menu_DeliveryBot",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 133201244,
+          "mode": "list",
+          "cachedResultName": "PEDIDOS",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit#gid=133201244"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id_pedido": "={{ $('Extraer ID Pedido Confirmado').item.json.id_pedido }}",
+            "estado": "listo"
+          },
+          "matchingColumns": [
+            "id_pedido"
+          ],
+          "schema": [
+            {
+              "id": "id_pedido",
+              "displayName": "id_pedido",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "estado",
+              "displayName": "estado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "cffdcc3f-d0b4-4431-8d30-da037888ffdc",
+      "name": "Actualizar Estado a Listo",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "mhSsizPC3huxuh4A",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8844152055:AAGNggO-ESHWeAQkC4HnjBQdQ7KIIL9jQ20/sendMessage",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "telegramApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Buscar Pedido Por ID').item.json.id_usuario, text: '🍽️ Tu pedido ' + $('Extraer ID Pedido Confirmado').item.json.id_pedido + ' ya esta LISTO para recoger. Gracias por tu compra ✅' }) }}",
+        "options": {}
+      },
+      "id": "9c55be39-025f-478d-ab9b-4b59b11e8c67",
+      "name": "Telegram - Avisar Cliente Listo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "njr5y0njjdh8afgW",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8844152055:AAGNggO-ESHWeAQkC4HnjBQdQ7KIIL9jQ20/sendMessage",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "telegramApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Extraer ID Pedido Confirmado').item.json.chat_id_cocina, text: '✅ Pedido ' + $('Extraer ID Pedido Confirmado').item.json.id_pedido + ' marcado como LISTO y notificado al cliente.' }) }}",
+        "options": {}
+      },
+      "id": "028ad36f-2cba-402d-8daf-de6e7fdb7997",
+      "name": "Telegram - Confirmar a Cocina",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        464,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "njr5y0njjdh8afgW",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const mensaje = $json.mensaje || '';\nconst match = mensaje.match(/ORD-2026-[A-Za-z0-9]{6}/);\nconst id_pedido = match ? match[0] : null;\nconst esCancelacion = /CANCELADO/i.test(mensaje);\nconst reply_markup = (id_pedido && !esCancelacion) ? { inline_keyboard: [[{ text: '✅ Pedido Listo', callback_data: 'LISTO_' + id_pedido }]] } : undefined;\nreturn [{ json: { mensaje, id_pedido, reply_markup } }];"
+      },
+      "id": "4c983909-accd-40d5-b47a-6d155da0e14b",
+      "name": "Preparar Notificacion Cocina",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Normalizar Entrada').item.json.chat_id }}",
+        "contextWindowLength": 15
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        -496,
+        832
+      ],
+      "id": "59ea943b-0bea-4035-bd03-55702c10988a",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        -656,
+        800
+      ],
+      "id": "d5697b3c-740f-4956-a032-5680863254d1",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "CZpU4b8r3biSKaO4",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "pe1",
+              "leftValue": "={{ $('Buscar Pedido Por ID').item.json.id_usuario }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "de914550-c297-4e96-a260-5b2d390f5aea",
+      "name": "¿Pedido Encontrado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -304,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8844152055:AAGNggO-ESHWeAQkC4HnjBQdQ7KIIL9jQ20/sendMessage",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "telegramApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Extraer ID Pedido Confirmado').item.json.chat_id_cocina, text: '⚠️ No se encontro el pedido ' + $('Extraer ID Pedido Confirmado').item.json.id_pedido + ' en el registro. No se pudo avisar al cliente ni actualizar el estado. Verifica el ID manualmente.' }) }}",
+        "options": {}
+      },
+      "id": "ca3d919f-4980-4255-9298-48b78f13a529",
+      "name": "Telegram - Pedido No Encontrado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -128,
+        160
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "njr5y0njjdh8afgW",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Cancela un pedido YA CONFIRMADO en la hoja PEDIDOS, cambiando su columna estado a 'cancelado'. USO OBLIGATORIO: solo llama esta herramienta despues de haber consultado con Consultar Estado Pedido que el pedido existe y que su estado actual es 'recibido' (nunca si ya esta 'listo', 'entregado' o 'cancelado'), y despues de que el usuario confirmo explicitamente que quiere cancelar. Usa id_pedido como columna de coincidencia.",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc",
+          "mode": "list",
+          "cachedResultName": "Menu_DeliveryBot",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 133201244,
+          "mode": "list",
+          "cachedResultName": "PEDIDOS",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit#gid=133201244"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id_pedido": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('id_pedido__using_to_match_', 'ID exacto del pedido a cancelar, ej ORD-2026-XXXXXX', 'string') }}",
+            "estado": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('estado', `Debe ser exactamente el texto 'cancelado'`, 'string') }}"
+          },
+          "matchingColumns": [
+            "id_pedido"
+          ],
+          "schema": [
+            {
+              "id": "id_pedido",
+              "displayName": "id_pedido",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "id_usuario",
+              "displayName": "id_usuario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fecha_hora",
+              "displayName": "fecha_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "items",
+              "displayName": "items",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "total",
+              "displayName": "total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "estado",
+              "displayName": "estado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "pago",
+              "displayName": "pago",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "041f870a-974e-47cb-b836-e0077726387b",
+      "name": "Cancelar Pedido",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        336,
+        992
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "mhSsizPC3huxuh4A",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Devuelve al stock de UN producto en la hoja MENU la cantidad de un pedido que fue cancelado. USO OBLIGATORIO: antes de llamar esta herramienta, obten el stock actual real del producto con Leer Menu en este mismo turno. El campo 'stock' que envies NUNCA debe ser inventado: debe ser exactamente stock_actual (de Leer Menu) + cantidad_a_devolver (la cantidad de ese producto en el pedido cancelado). Usa id_item como columna de coincidencia. NO modifica ningun otro campo del producto.",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc",
+          "mode": "list",
+          "cachedResultName": "Menu_DeliveryBot",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 2108793576,
+          "mode": "list",
+          "cachedResultName": "MENU",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-j2ZwE1iFPiv1cp8hjZiiVMHKUjBHKeSzMLaAhIKBxc/edit#gid=2108793576"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id_item": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('id_item__using_to_match_', 'ID exacto del producto, tal como aparece en Leer Menu', 'string') }}",
+            "stock": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('stock', 'Nuevo stock ya calculado: stock_actual (de Leer Menu) mas la cantidad devuelta. Nunca inventar este numero.', 'string') }}"
+          },
+          "matchingColumns": [
+            "id_item"
+          ],
+          "schema": [
+            {
+              "id": "id_item",
+              "displayName": "id_item",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "categoria",
+              "displayName": "categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nombre",
+              "displayName": "nombre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "descripcion",
+              "displayName": "descripcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "precio",
+              "displayName": "precio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "stock",
+              "displayName": "stock",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "activo",
+              "displayName": "activo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "38c08032-f9c9-4551-b0f3-92921202e36e",
+      "name": "Restaurar Stock",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        32,
+        992
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "mhSsizPC3huxuh4A",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Entrada": {
+      "main": [
+        [
+          {
+            "node": "¿Es confirmacion de cocina?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Parsear Respuesta IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Respuesta IA": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Responder Usuario",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Es pedido nuevo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Menu": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gestionar Sesion": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descontar Stock": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Pedido": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Estado Pedido": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es pedido nuevo?": {
+      "main": [
+        [
+          {
+            "node": "Preparar Notificacion Cocina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gestionar Usuario": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es confirmacion de cocina?": {
+      "main": [
+        [
+          {
+            "node": "Extraer ID Pedido Confirmado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer ID Pedido Confirmado": {
+      "main": [
+        [
+          {
+            "node": "Buscar Pedido Por ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Pedido Por ID": {
+      "main": [
+        [
+          {
+            "node": "¿Pedido Encontrado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar Estado a Listo": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Avisar Cliente Listo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - Avisar Cliente Listo": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Confirmar a Cocina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Notificacion Cocina": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Notificar Cocina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Pedido Encontrado?": {
+      "main": [
+        [
+          {
+            "node": "Actualizar Estado a Listo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram - Pedido No Encontrado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancelar Pedido": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restaurar Stock": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "a050afca-940c-4282-85d9-f315b72aff9f",
+  "meta": {
+    "instanceId": "d159dc4a8a680e678d27582abb8d367a57681992380625e77a36298de76ab60f"
+  },
+  "nodeGroups": [],
+  "id": "i4JVNNj2qaKC5PBs",
+  "tags": []
+}
